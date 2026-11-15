@@ -1,0 +1,14 @@
+{
+  "id": "aysenursolmaz/llama-3-2-1b-tr-lora",
+  "title": "llama-3-2-1b-tr-lora",
+  "code_file": "llama32_tr_lora.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}
