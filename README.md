@@ -4,7 +4,14 @@ Meta'nın [Llama 3.2 1B Instruct](https://huggingface.co/meta-llama/Llama-3.2-1B
 
 🤗 Model: [ayse-solmaz/Llama-3.2-1B-Instruct-tr-lora](https://huggingface.co/ayse-solmaz/Llama-3.2-1B-Instruct-tr-lora)
 
-> 🚧 Eğitim devam ediyor. Sonuçlar eğitim tamamlanınca eklenecek.
+## Sonuçlar
+
+| | Base | LoRA | Değişim |
+|---|---|---|---|
+| Türkçe test kaybı (Aya test, 250 örnek) | 3.2647 | **2.9307** | -%10.2 |
+| Doğrulama kaybı (300 örnek) | 2.4318 | **1.9718** | -%18.9 |
+
+Tek seed (42), tek koşu. Kaggle'da tek Tesla T4 GPU'da eğitim 25 dakika sürdü (11.3M eğitilebilir parametre, 6573 eğitim örneği). Örnek cevaplar ve tüm eğitim kayıtları için [model kartına](https://huggingface.co/ayse-solmaz/Llama-3.2-1B-Instruct-tr-lora) bakın.
 
 ## Kurulum
 

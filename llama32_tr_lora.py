@@ -5,22 +5,58 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
+import traceback
 
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["HF_HUB_DISABLE_PROGRESS_BARS"] = "1"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
+# Tüm çıktı /kaggle/working/run.log'a da yazılır; hata olursa traceback orada kalır.
+LOG = open("/kaggle/working/run.log", "a", buffering=1, encoding="utf-8")
+
+
+class Tee:
+    def __init__(self, *streams):
+        self.streams = streams
+
+    def write(self, x):
+        for s in self.streams:
+            s.write(x)
+
+    def flush(self):
+        for s in self.streams:
+            s.flush()
+
+
+sys.stdout = Tee(sys.__stdout__, LOG)
+sys.stderr = Tee(sys.__stderr__, LOG)
+
+
+def on_error(t, v, tb):
+    traceback.print_exception(t, v, tb, file=LOG)
+    LOG.flush()
+    sys.__excepthook__(t, v, tb)
+
+
+sys.excepthook = on_error
+
 
 def sh(cmd):
     print(f"$ {cmd}", flush=True)
-    subprocess.run(cmd, shell=True, check=True)
+    p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    print(p.stdout[-4000:], flush=True)
+    if p.returncode:
+        raise RuntimeError(f"komut başarısız ({p.returncode}): {cmd}")
 
 
 t_start = time.time()
-sh('pip install -q -U "transformers>=4.56" "peft>=0.17" "datasets>=3.0" accelerate 2>&1 | grep -v bigframes || true')
-sh("pip uninstall -y -q torchao || true")
+# transformers v5 bazı TrainingArguments ayarlarını kaldırdı; bilinen çalışan sürümlere sabitle
+sh('pip install -q "transformers==4.57.1" "peft==0.17.1" "accelerate>=1.0" "datasets>=3.0" 2>&1 | grep -v bigframes || true')
+sh('python -c "import transformers, peft; print(transformers.__version__, peft.__version__)"')
+sh("pip uninstall -y -q torchao || true")  # Kaggle'ın eski torchao'su peft ile çakışıyor
 sh("nvidia-smi -L")
 
 sh("git clone -q https://github.com/ayse-solmaz/turkish-lora-layers.git /kaggle/working/tll")
@@ -114,6 +150,15 @@ def generate(model, q):
     return tok.decode(out[0, ids["input_ids"].shape[1] :], skip_special_tokens=True).strip()
 
 
+# Ayarlar model yüklenmeden önce kurulur: yanlış bir ayar varsa koşu ilk dakikada düşer
+args = TrainingArguments(
+    output_dir="/kaggle/working/ckpt", per_device_train_batch_size=4, gradient_accumulation_steps=4,
+    num_train_epochs=1, learning_rate=2e-4, lr_scheduler_type="cosine", warmup_ratio=0.03,
+    logging_steps=20, eval_strategy="steps", eval_steps=100, per_device_eval_batch_size=8,
+    save_strategy="no", fp16=True, report_to="none", group_by_length=True, disable_tqdm=True,
+    remove_unused_columns=False, seed=42, dataloader_num_workers=2,
+)
+
 model = AutoModelForCausalLM.from_pretrained(BASE, torch_dtype=torch.float16).cuda()
 gpu = torch.cuda.get_device_name(0)
 print("GPU:", gpu, flush=True)
@@ -136,13 +181,6 @@ model.config.use_cache = False
 model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
 model.enable_input_require_grads()
 
-args = TrainingArguments(
-    output_dir="/kaggle/working/ckpt", per_device_train_batch_size=4, gradient_accumulation_steps=4,
-    num_train_epochs=1, learning_rate=2e-4, lr_scheduler_type="cosine", warmup_ratio=0.03,
-    logging_steps=20, eval_strategy="steps", eval_steps=100, per_device_eval_batch_size=8,
-    save_strategy="no", fp16=True, report_to="none", group_by_length=True,
-    remove_unused_columns=False, seed=42, dataloader_num_workers=2,
-)
 trainer = Trainer(model=model, args=args, train_dataset=train, eval_dataset=val, data_collator=collate)
 t0 = time.time()
 trainer.train()
